@@ -9,7 +9,7 @@ import numpy as np
 
 Mach                = 2
 t                   = 5
-n, N                = int(1e6), int(1e6)
+n, N                = int(1e4), int(1e4)
 TrajectoryTest      = np.zeros([n,4])
 TrajectoryTest[:,0] = np.linspace(0,t,n)
 TrajectoryTest[:,1] = np.sin(2*np.pi * TrajectoryTest[:,0]) 
@@ -21,8 +21,8 @@ method              = DensityWakeSolver(IniTraj, sound_speed = IniTraj.MaxSpeed 
 
 
 Domain = Cartesian3D(rmin=0.01, SeedFraction = 0.02,
-        Resolution_x=600, Min_x=-3, Max_x=3,
-        Resolution_y=600, Min_y=-3, Max_y=3,
+        Resolution_x=100, Min_x=-3, Max_x=3,
+        Resolution_y=100, Min_y=-3, Max_y=3,
         Resolution_z=100, Min_z=0, Max_z=3)
 
 

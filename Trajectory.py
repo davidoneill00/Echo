@@ -4,7 +4,6 @@ We want a general method of prescrbing any trajectory, capable of evenly resampl
 and performing a very efficient interpolation.
 """
 
-import Utilities as utls
 import numpy as np
 import math
 from scipy.interpolate import interp1d

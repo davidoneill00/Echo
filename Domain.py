@@ -4,8 +4,6 @@ The purpose of this file is to initialise both the spatial (and soon temporal) d
 import numpy as np
 import math 
 
-
-
 class Cartesian3D():
 	def __init__(self, 
 		rmin, SeedFraction,

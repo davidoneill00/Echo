@@ -13,10 +13,8 @@
 
 namespace py = pybind11;       // rename for convenience
 
-// ===============================================================
-// Helper interpolation for uniform time grids
-// ===============================================================
 
+// Helper interpolation for uniform time grids
 inline void interp_linear_uniform(
     double xp0,            // initial value in array
     double dx,             // array spacing
@@ -40,10 +38,8 @@ inline void interp_linear_uniform(
         out[d] = f0[d] + w * (f1[d] - f0[d]); // then we access the address given as double* out
 }
 
-// ===============================================================
-// Helper function for tracking visited cells in BFS algorithm
-// ===============================================================
 
+// Helper function for tracking visited cells in BFS algorithm
 inline size_t idx3d(size_t i, size_t j, size_t k,
                     size_t Nx, size_t Ny, size_t Nz) {
     return (i * Ny + j) * Nz + k;
@@ -69,39 +65,46 @@ inline bool propagate_full_cpp(
     double* tau_out, 
     double* err_out)
 {
-    if (!std::isfinite(tr)) return false;
+
+    // 0. Initialise
+    double X_r[3];
+    double V_r[3];
+    double A_r[3];
+    double X_rel[3];
+    double Projection[3];
+    double PV=0;
+    double PA=0;
+    double Px=0;
+    double Ax=0;
+    double Vx=0;
+    double xx=0;
+    double VV=0;
 
     double xp0 = t_arr[0];
     double dx  = t_arr[1] - t_arr[0];
+    if (!std::isfinite(tr)) return false;
 
-    double X_r[3], V_r[3], A_r[3];
-    interp_linear_uniform(xp0, dx, x_arr, nt, dim, tr, X_r); // saves the interpolated retarded position 
-    interp_linear_uniform(xp0, dx, v_arr, nt, dim, tr, V_r); // saves the interpolated retarded velocity 
-    interp_linear_uniform(xp0, dx, a_arr, nt, dim, tr, A_r); // saves the interpolated retarded acceleration 
-
-    // Predictor Step
-    double X_rel[3];
+    // 2. Predictor Step
+    interp_linear_uniform(xp0, dx, x_arr, nt, dim, tr, X_r); // saves position 
+    interp_linear_uniform(xp0, dx, v_arr, nt, dim, tr, V_r); // saves velocity 
+    interp_linear_uniform(xp0, dx, a_arr, nt, dim, tr, A_r); // saves acceleration 
     for (int d = 0; d < dim; ++d) X_rel[d] = X_r[d] - X[d];
-
-    double X_rel_norm    = std::sqrt(X_rel[0]*X_rel[0] + X_rel[1]*X_rel[1] + X_rel[2]*X_rel[2]);
-    double Projection[3] = { X_rel[0]/X_rel_norm, X_rel[1]/X_rel_norm, X_rel[2]/X_rel_norm };
-
-    double PV=0, PA=0, Px=0, Ax=0, Vx=0, xx=0, VV=0;
+    double X_rel_norm = std::sqrt(X_rel[0]*X_rel[0] + X_rel[1]*X_rel[1] + X_rel[2]*X_rel[2]);
     for (int d = 0; d < dim; ++d) {
-        PV += Projection[d]*V_r[d];
-        PA += Projection[d]*A_r[d];
-        Px += Projection[d]*dX[d];
-        Ax += A_r[d]*dX[d];
-        Vx += V_r[d]*dX[d];
-        xx += dX[d]*dX[d];
-        VV += V_r[d]*V_r[d];
+        PV           += Projection[d]*V_r[d];
+        PA           += Projection[d]*A_r[d];
+        Px           += Projection[d]*dX[d];
+        Ax           += A_r[d]*dX[d];
+        Vx           += V_r[d]*dX[d];
+        xx           += dX[d]*dX[d];
+        VV           += V_r[d]*V_r[d];
+        Projection[d] = X_rel[d]/X_rel_norm;
     }
 
     double Constant              = -Px + (xx - Px*Px) / (2 * X_rel_norm);
     double Linear_Coefficient    = cs + PV + (PV*Px - Vx)/X_rel_norm;
     double Quadratic_Coefficient = 0.5*PA + (VV - Ax - PV*PV + PA*Px)/(2*X_rel_norm);
-
-    double D = Linear_Coefficient*Linear_Coefficient - 4.0*Quadratic_Coefficient*Constant;
+    double D                     = Linear_Coefficient*Linear_Coefficient - 4.0*Quadratic_Coefficient*Constant;
     double dt_pred;
     if (D < 0.0) {
         dt_pred = -Constant / Linear_Coefficient;
@@ -117,38 +120,32 @@ inline bool propagate_full_cpp(
     double tau = tr + dt_pred;
     double X_new[3] = { X[0]+dX[0], X[1]+dX[1], X[2]+dX[2] };
 
+    // 3. Halley Correction Step
     double X_tau[3], V_tau[3], A_tau[3];
     interp_linear_uniform(xp0, dx, x_arr, nt, dim, tau, X_tau);
     interp_linear_uniform(xp0, dx, v_arr, nt, dim, tau, V_tau);
     interp_linear_uniform(xp0, dx, a_arr, nt, dim, tau, A_tau);
 
-    double dxa        = X_tau[0]-X_new[0], dxb = X_tau[1]-X_new[1], dxc = X_tau[2]-X_new[2];
-    double first_dist = std::sqrt(dxa*dxa + dxb*dxb + dxc*dxc);
+    double r_vec[3]   = { X_tau[0]-X_new[0], X_tau[1]-X_new[1], X_tau[2]-X_new[2] };
+    double R          = std::sqrt(r_vec[0]*r_vec[0] + r_vec[1]*r_vec[1] + r_vec[2]*r_vec[2]);
+    double first_dist = R;
     double first_err  = std::abs((tau - t) + first_dist / cs);
-
-    // Halley Correction Step
-    double r_vec[3] = { X_tau[0]-X_new[0], X_tau[1]-X_new[1], X_tau[2]-X_new[2] };
-    double R        = std::sqrt(r_vec[0]*r_vec[0] + r_vec[1]*r_vec[1] + r_vec[2]*r_vec[2]);
-    
-    if (R <= 0.0) return false; // unnecessary?
-
-    double n[3]    = { r_vec[0]/R, r_vec[1]/R, r_vec[2]/R };
-    double v_dot_n = n[0]*V_tau[0] + n[1]*V_tau[1] + n[2]*V_tau[2];
-    double F       = (tau - t) + R / cs;
-    double Fp      = 1.0 + v_dot_n / cs;
-
-    double v_sq    = V_tau[0]*V_tau[0] + V_tau[1]*V_tau[1] + V_tau[2]*V_tau[2];
-    double n_dot_a = n[0]*A_tau[0] + n[1]*A_tau[1] + n[2]*A_tau[2];
-    double Fpp     = (n_dot_a + (v_sq - v_dot_n*v_dot_n)/R) / cs;
-    double denom   = 2*Fp*Fp - F*Fpp;
+    double n[3]       = { r_vec[0]/R, r_vec[1]/R, r_vec[2]/R };
+    double v_dot_n    = n[0]*V_tau[0] + n[1]*V_tau[1] + n[2]*V_tau[2];
+    double F          = (tau - t) + R / cs;
+    double Fp         = 1.0 + v_dot_n / cs;
+    double v_sq       = V_tau[0]*V_tau[0] + V_tau[1]*V_tau[1] + V_tau[2]*V_tau[2];
+    double n_dot_a    = n[0]*A_tau[0] + n[1]*A_tau[1] + n[2]*A_tau[2];
+    double Fpp        = (n_dot_a + (v_sq - v_dot_n*v_dot_n)/R) / cs;
+    double denom      = 2*Fp*Fp - F*Fpp;
 
     if (std::abs(denom) > 1e-20)
-        tau -= (2*F*Fp)/denom;
+        tau -= (2*F*Fp)/denom;    // Halley's method
     else
-        tau -= F/Fp;
+        tau -= F/Fp;              // fallback to Newton's method
 
-    // Error metric with refined tau
-    interp_linear_uniform(xp0, dx, x_arr, nt, dim, tau, X_tau);
+    // 3. Define error with refined tau
+    interp_linear_uniform(xp0, dx, x_arr, nt, dim, tau, X_tau); // Overwrites X_tau
     double dx0         = X_tau[0]-X_new[0], dx1 = X_tau[1]-X_new[1], dx2 = X_tau[2]-X_new[2];
     double dist        = std::sqrt(dx0*dx0 + dx1*dx1 + dx2*dx2);
     double second_err  = std::abs((tau - t) + dist / cs);
@@ -161,6 +158,7 @@ inline bool propagate_full_cpp(
     else
         err = second_err;
 
+    //std::cout << "error1 " << first_err << " error2 " << second_err << "\n";
     *tau_out = (err > error_tol ? NAN : tau);
     *err_out = err;
     return true;

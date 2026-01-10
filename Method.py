@@ -4,7 +4,6 @@ This file computes the density perturbations created by the perturbers prescribe
 import RootFinder as rf
 import numpy as np
 import bfs_solver 
-import bfs_solver
 from bfs_solver import bfs3d
 
 class DensityWakeSolver():
@@ -199,13 +198,6 @@ class Walk:
 	                y,
 	                z,
 	                np.ascontiguousarray(np.array([[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]),dtype=np.float64),
-	                # np.ascontiguousarray(np.array([
-				    # [ 1, 0, 0],[-1, 0, 0],[0, 1, 0],[0,-1, 0],[0, 0, 1],[0, 0,-1],
-				    # [ 1, 1, 0],[ 1,-1, 0],[-1, 1, 0],[-1,-1, 0],
-				    # [ 1, 0, 1],[ 1, 0,-1],[-1, 0, 1],[-1, 0,-1],
-				    # [ 0, 1, 1],[ 0, 1,-1],[ 0,-1, 1],[ 0,-1,-1],
-				    # [ 1, 1, 1],[ 1, 1,-1],[ 1,-1, 1],[ 1,-1,-1],
-				    # [-1, 1, 1],[-1, 1,-1],[-1,-1, 1],[-1,-1,-1]]), dtype=np.float64),
 	                self.t,
 	                self.Method.sound_speed,
 	                error_tol,
