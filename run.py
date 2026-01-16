@@ -1,48 +1,41 @@
-
 from Domain import Cartesian3D
-from Method import DensityWakeSolver
+from Method import DensityWakeSolver, Walk
 from Trajectory import Trajectory
-from ParallelMPI import run_mpi
 import numpy as np
 
 # ------------- Initialise problem -------------
 
-Mach                = 2
-t                   = 5
+Mach                = 5.0
+Max_Number_of_Roots = 5
+t                   = 3.0
 n, N                = int(1e4), int(1e4)
 TrajectoryTest      = np.zeros([n,4])
 TrajectoryTest[:,0] = np.linspace(0,t,n)
-TrajectoryTest[:,1] = np.sin(2*np.pi * TrajectoryTest[:,0]) 
-TrajectoryTest[:,2] = np.cos(2*np.pi * TrajectoryTest[:,0]) 
+TrajectoryTest[:,1] = np.linspace(0,t,n) #np.sin(2*np.pi * TrajectoryTest[:,0]) 
+TrajectoryTest[:,2] = np.zeros(n)        #np.cos(2*np.pi * TrajectoryTest[:,0]) 
 TrajectoryTest[:,3] = np.zeros(n)
 
-IniTraj             = Trajectory(TrajectoryTest, N, plot=False)
-method              = DensityWakeSolver(IniTraj, sound_speed = IniTraj.MaxSpeed / Mach, Max_Number_of_Roots = 10)
+IniTraj = Trajectory(TrajectoryTest, N, plot=False)
+Domain  = Cartesian3D(rmin=0.01, SeedFraction = 0.02,
+        Resolution_x=200, Min_x=-3, Max_x=3,
+        Resolution_y=200, Min_y=-3, Max_y=3,
+        Resolution_z=200, Min_z=0, Max_z=3)
 
 
-Domain = Cartesian3D(rmin=0.01, SeedFraction = 0.02,
-        Resolution_x=100, Min_x=-3, Max_x=3,
-        Resolution_y=100, Min_y=-3, Max_y=3,
-        Resolution_z=100, Min_z=0, Max_z=3)
-
-
-# ------------- Run distributed computation -------------
-results, nroots = run_mpi(Domain, method, t, error_tol=3e-7)
+method                 = Walk(Domain, IniTraj, Mach, Max_Number_of_Roots)
+results, nroots, roots = method.single_wake(t, error_tol=3e-7, unique_tol=5e-4)
 
 
 
-from mpi4py import MPI
-comm  = MPI.COMM_WORLD
-rank  = comm.Get_rank()
-if rank == 0 and results is not None and nroots is not None:
-    import matplotlib.pyplot as plt
-    plt.contourf(Domain.X, Domain.Y, np.log10(results[:,:,0]+1e-16), vmin = -1, vmax = 0.5, levels = 100, cmap = 'jet')
-    plt.colorbar()
-    plt.show()
+import matplotlib.pyplot as plt
 
-    plt.contourf(Domain.X, Domain.Y, (nroots[:,:,0]), cmap='magma')
-    plt.colorbar()
-    plt.show()
+plt.contourf(Domain.X, Domain.Y, (nroots[:,:,0]), cmap='magma')
+plt.colorbar()
+plt.show()
+
+plt.contourf(Domain.X, Domain.Y, np.log10(results[:,:,0]), cmap='jet', levels=np.linspace(-1,0.5,100))
+plt.colorbar()
+plt.show()
 
 import sys
 sys.exit()

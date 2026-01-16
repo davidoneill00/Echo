@@ -3,8 +3,9 @@ This file computes the density perturbations created by the perturbers prescribe
 """
 import RootFinder as rf
 import numpy as np
-import bfs_solver 
-from bfs_solver import bfs3d
+import Method_cpp
+from Method_cpp import bfs3d, UniqueArray_4d, Alpha3d
+
 
 class DensityWakeSolver():
 	def __init__(
@@ -95,7 +96,7 @@ class DensityWakeSolver():
 		return np.nansum(contrib)
 
 
-	def QuickAlpha(self, t:float, x:float, y:float, z:float, roots:list) -> dict:
+	def QuickAlpha(self, t:float, x:float, y:float, z:float, roots:list):
 		"""
 		If the roots are already known, we can bypass the root-finding method to return the 
 		density perturbations at a given time. 
@@ -125,91 +126,120 @@ class DensityWakeSolver():
 
 
 class Walk:
-    """
-    3D BFS-based solver for the linearised fluid wake in a cube.
-    Starting from known root seeds (e.g. from DensityWakeSolver.RootValues), it 
-    propagates through all topologically connected grid cells.
-    """
+	"""
+	3D BFS-based solver for the linearised fluid wake in a cube.
+	Starting from known root seeds (e.g. from DensityWakeSolver.RootValues), it 
+	propagates through all topologically connected grid cells.
+	"""
 
-    def __init__(
+	def __init__(
 		self, 
 		Domain, 
-		Method, 
-		t,
+		Trajectory, 
+		Mach,
+		Max_Number_of_Roots,
 		print_status=False, 
 		ndim=3
     	):
 
-        self.Domain       = Domain
-        self.Method       = Method
-        self.t            = t
-        self.ndim         = ndim
+		self.Domain       = Domain
+		self.ndim         = ndim
+		self.Method       = DensityWakeSolver(Trajectory=Trajectory, sound_speed=Trajectory.MaxSpeed/Mach, Max_Number_of_Roots=Max_Number_of_Roots)
+		self.print_status = print_status
 
 
+	@property
+	def InitialiseArrays(self):
+		"""Allocate 3D arrays for roots and errors."""
+		Nx, Ny, Nz = self.Domain.Resolution_x, self.Domain.Resolution_y, self.Domain.Resolution_z
+		Nr         = self.Method.Max_Number_of_Roots
+		Roots      = np.ascontiguousarray(np.full((Nx, Ny, Nz, Nr), np.nan), dtype=np.float64)
+		Errors     = np.ascontiguousarray(np.full((Nx, Ny, Nz, Nr), np.nan), dtype=np.float64)
+		return Roots, Errors
 
-    def InitialiseArrays(self):
-        """Allocate 3D arrays for roots and errors."""
-        Nx, Ny, Nz = self.Domain.Resolution_x, self.Domain.Resolution_y, self.Domain.Resolution_z
-        Roots      = np.ascontiguousarray(np.full((Nx, Ny, Nz), np.nan), dtype=np.float64)
-        Errors     = np.ascontiguousarray(np.full((Nx, Ny, Nz), np.nan), dtype=np.float64)
-        return Roots, Errors
+	def ComputeSeedRoots(self, t):
+		origin_roots = []
+		a, b         = self.Method.Trajectory.Time_i, t
+		for origin in self.Domain.SeedOrigins:
+			ix, iy, iz    = origin
+			x, y, z       = self.Domain.X[ix], self.Domain.Y[iy], self.Domain.Z[iz]
+			f_a, f_b      = self.Method.RootFunction([a, b], t, x, y, z)
+			roots         = self.Method.RootValues(t, x, y, z, a, b, f_a, f_b)
+			# Note: for multiple particle perturbers we do this for each one and keep track of each trajectory
+			origin_roots.append((origin,roots))
 
+		return origin_roots
 
-    # ------------------------------------------------------------
-    # ------------- Launch cpp compiled solver -------------------
-    # ------------------------------------------------------------
+	# ------------------------------------------------------------
+	# ------------- Launch cpp compiled solver -------------------
+	# ------------------------------------------------------------
 
-    def Cube(self, seed_indx, seed_root, error_tol):
-        """
-        Launch a Breadth First Search (BFS) algorithm from a corner to fill the entire cube.
+	def launch_bfs(self, t, Roots, Errors, error_tol, unique_tol):
+		"""
+		Launch a Breadth First Search (BFS) algorithm from a corner to fill the entire domain
+		"""
 
-        Parameters
-        ----------
-        seed_indx  : starting index for seed
-        seed_root  : starting root value for seed
-        plot_alpha : plot the constructed density wake (optional)
-		plot_error : plot the associated errors (optional)
+		if self.ndim != 3:
+			raise ValueError("CoverCube requires ndim=3")
 
-        Returns
-        -------
-        Alpha : ndarray
-        Roots : ndarray
+		Roots, Errors = bfs3d(
+				Roots,
+				Errors,
+				self.Domain.X,
+				self.Domain.Y,
+				self.Domain.Z,
+				np.ascontiguousarray(np.array([[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]),dtype=np.float64),
+				t,
+				self.Method.sound_speed,
+				error_tol,
+				unique_tol,
+				self.Method._t_arr,
+				self.Method._x_arr,
+				self.Method._v_arr,
+				self.Method._a_arr
+				)
 
-        """
-
-        if self.ndim != 3:
-            raise ValueError("CoverCube requires ndim=3")
-
-        Roots, Errors    = self.InitialiseArrays()
-        Roots[seed_indx] = seed_root
-
-        # UPDATE: Give all seeds here and bfs will be more accurate
-        
-        x                = self.Domain.X
-        y                = self.Domain.Y
-        z                = self.Domain.Z
-
-        if np.isfinite(seed_root):
-
-	        Roots, Errors = bfs3d(
-	                Roots,
-	                Errors,
-	                x,
-	                y,
-	                z,
-	                np.ascontiguousarray(np.array([[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]),dtype=np.float64),
-	                self.t,
-	                self.Method.sound_speed,
-	                error_tol,
-	                self.Method._t_arr,
-	                self.Method._x_arr,
-	                self.Method._v_arr,
-	                self.Method._a_arr
-	            )
+		return Roots, Errors
 
 
-        return Roots, Errors
+	def single_wake(self, t, error_tol, unique_tol):
+		"""
+		BFS propagation across different roots.
 
+		Parameters
+		----------
+		Domain : spatial grid object
+		Method : DensityWakeSolver object
+		t      : Evaluation time.
+
+		"""
+
+		# === 1. Compute the seeds and create empty containers ===
+		origin_roots  = self.ComputeSeedRoots(t)
+		Roots, Errors = self.InitialiseArrays
+
+		# === 2. Compute seed roots using global solver ===		
+		for (origin,roots) in origin_roots:
+			ix, iy, iz           = origin
+			Roots[ix, iy, iz, :] = roots
+
+		Roots, Errors = self.launch_bfs(t, Roots, Errors, error_tol, unique_tol)
+		# optional: save errors too
+
+		# === 3. Use root grid to compute density perturbations ===
+		GlobalAlpha, NRoots = Alpha3d(
+			Roots,
+			self.Domain.X,
+			self.Domain.Y,
+			self.Domain.Z,
+			self.Method._t_arr,
+			self.Method._x_arr,
+			self.Method._v_arr,
+			self.Method.sound_speed
+			)
+
+		print(f"[Single Wake] Global Alpha field assembled. Shape = {GlobalAlpha.shape}")
+		return GlobalAlpha, NRoots, Roots
 
 
 
@@ -324,75 +354,75 @@ if __name__ == '__main__':
 
 
 	if Compute_3D_Cube:
-	    Domain = Domain.CartesianHybridGrid_3D(
-	        N_Substeps=400, rmin=0.1, 
-	        Resolution_x=4, Min_x=-8   , Max_x=8   , 
-	        Resolution_y=4, Min_y=-8   , Max_y=8   , 
-	        Resolution_z=3, Min_z=-11.25, Max_z=11.25
-	        )    
+		Domain = Domain.CartesianHybridGrid_3D(
+			N_Substeps=400, rmin=0.1, 
+			Resolution_x=4, Min_x=-8   , Max_x=8   , 
+			Resolution_y=4, Min_y=-8   , Max_y=8   , 
+			Resolution_z=3, Min_z=-11.25, Max_z=11.25
+			)    
 
-	    start  = time.time()
+		start  = time.time()
 
-	    
-	    CoarseOrigin = (1,1,1)
-	    CoarseStart  = (1,1,1)
+		
+		CoarseOrigin = (1,1,1)
+		CoarseStart  = (1,1,1)
 
-	    a                   = DWSOLV.Trajectory.Time_i
-	    b                   = float(t)
-	    x, y, z             = Domain.Coarse_Positions[CoarseStart]
-	    f_a                 = DWSOLV.RootFunction(a,t, x, y, z)
-	    f_b                 = DWSOLV.RootFunction(b,t, x, y, z)
-	    start_tr            = DWSOLV.RootValues(t, x, y, z, a, b, f_a, f_b)
+		a                   = DWSOLV.Trajectory.Time_i
+		b                   = float(t)
+		x, y, z             = Domain.Coarse_Positions[CoarseStart]
+		f_a                 = DWSOLV.RootFunction(a,t, x, y, z)
+		f_b                 = DWSOLV.RootFunction(b,t, x, y, z)
+		start_tr            = DWSOLV.RootValues(t, x, y, z, a, b, f_a, f_b)
 
-	    x_ddd, y_ddd, z_ddd = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1], CoarseOrigin[2])]
-	    f_a_ddd             = DWSOLV.RootFunction(a,t, x_ddd, y_ddd, z_ddd)
-	    f_b_ddd             = DWSOLV.RootFunction(b,t, x_ddd, y_ddd, z_ddd)
-	    tr_ddd              = DWSOLV.RootValues(t, x_ddd, y_ddd, z_ddd, a, b, f_a_ddd, f_b_ddd)
+		x_ddd, y_ddd, z_ddd = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1], CoarseOrigin[2])]
+		f_a_ddd             = DWSOLV.RootFunction(a,t, x_ddd, y_ddd, z_ddd)
+		f_b_ddd             = DWSOLV.RootFunction(b,t, x_ddd, y_ddd, z_ddd)
+		tr_ddd              = DWSOLV.RootValues(t, x_ddd, y_ddd, z_ddd, a, b, f_a_ddd, f_b_ddd)
 
-	    x_udd, y_udd, z_udd = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1], CoarseOrigin[2])]
-	    f_a_udd             = DWSOLV.RootFunction(a,t, x_udd, y_udd, z_udd)
-	    f_b_udd             = DWSOLV.RootFunction(b,t, x_udd, y_udd, z_udd)
-	    tr_udd              = DWSOLV.RootValues(t, x_udd, y_udd, z_udd, a, b, f_a_udd, f_b_udd)
+		x_udd, y_udd, z_udd = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1], CoarseOrigin[2])]
+		f_a_udd             = DWSOLV.RootFunction(a,t, x_udd, y_udd, z_udd)
+		f_b_udd             = DWSOLV.RootFunction(b,t, x_udd, y_udd, z_udd)
+		tr_udd              = DWSOLV.RootValues(t, x_udd, y_udd, z_udd, a, b, f_a_udd, f_b_udd)
 
-	    x_dud, y_dud, z_dud = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1]+1, CoarseOrigin[2])]
-	    f_a_dud             = DWSOLV.RootFunction(a,t, x_dud, y_dud, z_dud)
-	    f_b_dud             = DWSOLV.RootFunction(b,t, x_dud, y_dud, z_dud)
-	    tr_dud              = DWSOLV.RootValues(t, x_dud, y_dud, z_dud, a, b, f_a_dud, f_b_dud)
+		x_dud, y_dud, z_dud = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1]+1, CoarseOrigin[2])]
+		f_a_dud             = DWSOLV.RootFunction(a,t, x_dud, y_dud, z_dud)
+		f_b_dud             = DWSOLV.RootFunction(b,t, x_dud, y_dud, z_dud)
+		tr_dud              = DWSOLV.RootValues(t, x_dud, y_dud, z_dud, a, b, f_a_dud, f_b_dud)
 
-	    x_uud, y_uud, z_uud = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1]+1, CoarseOrigin[2])]
-	    f_a_uud             = DWSOLV.RootFunction(a,t, x_uud, y_uud, z_uud)
-	    f_b_uud             = DWSOLV.RootFunction(b,t, x_uud, y_uud, z_uud)
-	    tr_uud              = DWSOLV.RootValues(t, x_uud, y_uud, z_uud, a, b, f_a_uud, f_b_uud)
-
-
-	    x_ddu, y_ddu, z_ddu = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1], CoarseOrigin[2]+1)]
-	    f_a_ddu             = DWSOLV.RootFunction(a,t, x_ddu, y_ddu, z_ddu)
-	    f_b_ddu             = DWSOLV.RootFunction(b,t, x_ddu, y_ddu, z_ddu)
-	    tr_ddu              = DWSOLV.RootValues(t, x_ddu, y_ddu, z_ddu, a, b, f_a_ddu, f_b_ddu)
-
-	    x_udu, y_udu, z_udu = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1], CoarseOrigin[2]+1)]
-	    f_a_udu             = DWSOLV.RootFunction(a,t, x_udu, y_udu, z_udu)
-	    f_b_udu             = DWSOLV.RootFunction(b,t, x_udu, y_udu, z_udu)
-	    tr_udu              = DWSOLV.RootValues(t, x_udu, y_udu, z_udu, a, b, f_a_udu, f_b_udu)
-
-	    x_duu, y_duu, z_duu = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1]+1, CoarseOrigin[2]+1)]
-	    f_a_duu             = DWSOLV.RootFunction(a,t, x_duu, y_duu, z_duu)
-	    f_b_duu             = DWSOLV.RootFunction(b,t, x_duu, y_duu, z_duu)
-	    tr_duu              = DWSOLV.RootValues(t, x_duu, y_duu, z_duu, a, b, f_a_duu, f_b_duu)
-
-	    x_uuu, y_uuu, z_uuu = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1]+1, CoarseOrigin[2]+1)]
-	    f_a_uuu             = DWSOLV.RootFunction(a,t, x_uuu, y_uuu, z_uuu)
-	    f_b_uuu             = DWSOLV.RootFunction(b,t, x_uuu, y_uuu, z_uuu)
-	    tr_uuu              = DWSOLV.RootValues(t, x_uuu, y_uuu, z_uuu, a, b, f_a_uuu, f_b_uuu)
+		x_uud, y_uud, z_uud = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1]+1, CoarseOrigin[2])]
+		f_a_uud             = DWSOLV.RootFunction(a,t, x_uud, y_uud, z_uud)
+		f_b_uud             = DWSOLV.RootFunction(b,t, x_uud, y_uud, z_uud)
+		tr_uud              = DWSOLV.RootValues(t, x_uud, y_uud, z_uud, a, b, f_a_uud, f_b_uud)
 
 
-	    walk = Walk(Domain=Domain, Method=DWSOLV, t=t, print_status=True)
+		x_ddu, y_ddu, z_ddu = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1], CoarseOrigin[2]+1)]
+		f_a_ddu             = DWSOLV.RootFunction(a,t, x_ddu, y_ddu, z_ddu)
+		f_b_ddu             = DWSOLV.RootFunction(b,t, x_ddu, y_ddu, z_ddu)
+		tr_ddu              = DWSOLV.RootValues(t, x_ddu, y_ddu, z_ddu, a, b, f_a_ddu, f_b_ddu)
 
-	    Alpha, Roots = walk.Cube(
-	    	[tr_ddd, tr_udd, tr_dud, tr_uud,tr_ddu, tr_udu, tr_duu, tr_uuu], 
-	    	plot_alpha=True, 
-	    	plot_error=True
-	    	)
+		x_udu, y_udu, z_udu = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1], CoarseOrigin[2]+1)]
+		f_a_udu             = DWSOLV.RootFunction(a,t, x_udu, y_udu, z_udu)
+		f_b_udu             = DWSOLV.RootFunction(b,t, x_udu, y_udu, z_udu)
+		tr_udu              = DWSOLV.RootValues(t, x_udu, y_udu, z_udu, a, b, f_a_udu, f_b_udu)
+
+		x_duu, y_duu, z_duu = Domain.Coarse_Positions[(CoarseOrigin[0], CoarseOrigin[1]+1, CoarseOrigin[2]+1)]
+		f_a_duu             = DWSOLV.RootFunction(a,t, x_duu, y_duu, z_duu)
+		f_b_duu             = DWSOLV.RootFunction(b,t, x_duu, y_duu, z_duu)
+		tr_duu              = DWSOLV.RootValues(t, x_duu, y_duu, z_duu, a, b, f_a_duu, f_b_duu)
+
+		x_uuu, y_uuu, z_uuu = Domain.Coarse_Positions[(CoarseOrigin[0]+1, CoarseOrigin[1]+1, CoarseOrigin[2]+1)]
+		f_a_uuu             = DWSOLV.RootFunction(a,t, x_uuu, y_uuu, z_uuu)
+		f_b_uuu             = DWSOLV.RootFunction(b,t, x_uuu, y_uuu, z_uuu)
+		tr_uuu              = DWSOLV.RootValues(t, x_uuu, y_uuu, z_uuu, a, b, f_a_uuu, f_b_uuu)
+
+
+		walk = Walk(Domain=Domain, Method=DWSOLV, t=t, print_status=True)
+
+		Alpha, Roots = walk.Cube(
+			[tr_ddd, tr_udd, tr_dud, tr_uud,tr_ddu, tr_udu, tr_duu, tr_uuu], 
+			plot_alpha=True, 
+			plot_error=True
+			)
 
 
     

@@ -1,5 +1,5 @@
 """
-The purpose of this file is to trajectory preprocessing for perturbers moving through the gaseous medium.
+The purpose of this file is trajectory preprocessing for perturbers moving through the gaseous medium.
 We want a general method of prescrbing any trajectory, capable of evenly resampling the trajectory over time,
 and performing a very efficient interpolation.
 """
@@ -7,6 +7,9 @@ and performing a very efficient interpolation.
 import numpy as np
 import math
 from scipy.interpolate import interp1d
+
+# Implement live possibility for orbits
+# Have another class for multiple particles for n-body simulations
 
 
 class Trajectory():
@@ -83,39 +86,37 @@ class Trajectory():
 	@property
 	def CreateInterpolators(self):
 		if self._CreateInterpolator is None:
-		    t = self.PreEvaluatedPoints[:, 0]
-		    x = self.PreEvaluatedPoints[:, 1:]
+			t = self.PreEvaluatedPoints[:, 0]
+			x = self.PreEvaluatedPoints[:, 1:]
 
-		    # Compute velocity and acceleration
-		    Velocity_Vector     = np.gradient(x, t, axis=0)
-		    Acceleration_Vector = np.gradient(Velocity_Vector, t, axis=0)
+			# Compute velocity and acceleration
+			Velocity_Vector     = np.gradient(x, t, axis=0)
+			Acceleration_Vector = np.gradient(Velocity_Vector, t, axis=0)
 
-		    # Build interpolators
-		    self.PositionInterp      = interp1d(t, x, axis=0, fill_value='extrapolate', kind='linear')
-		    self.VelocityInterp      = interp1d(t, Velocity_Vector, axis=0, fill_value='extrapolate', kind='linear')
-		    self.AccelerationInterp  = interp1d(t, Acceleration_Vector, axis=0, fill_value='extrapolate', kind='linear')
-		    self._CreateInterpolator = True
+			# Build interpolators
+			self.PositionInterp      = interp1d(t, x, axis=0, fill_value='extrapolate', kind='linear')
+			self.VelocityInterp      = interp1d(t, Velocity_Vector, axis=0, fill_value='extrapolate', kind='linear')
+			self.AccelerationInterp  = interp1d(t, Acceleration_Vector, axis=0, fill_value='extrapolate', kind='linear')
+			self._CreateInterpolator = True
 
 	@property
 	def EvenlySampledTrajectory(self):
-	    """
-	    Computes and returns (position, velocity, acceleration)
-	    on the evenly spaced time grid.
-	    """
-	    if self._SampledTrajectory is None:
-	        self.CreateInterpolators
+		"""
+		Computes and returns (position, velocity, acceleration)
+		on the evenly spaced time grid.
+		"""
+		if self._SampledTrajectory is None:
+			self.CreateInterpolators
 
-	        # Cache the full sampled arrays
-	        self._SampledTrajectory = (
-	            self.PositionInterp(self.T_Array),
-	            self.VelocityInterp(self.T_Array),
-	            self.AccelerationInterp(self.T_Array)
-	        )
+			# Cache the full sampled arrays
+			self._SampledTrajectory = (
+				self.PositionInterp(self.T_Array),
+				self.VelocityInterp(self.T_Array),
+				self.AccelerationInterp(self.T_Array)
+			)
 
-	    return self._SampledTrajectory
-
-
-
+		return self._SampledTrajectory
+	
 	@property
 	def X_Array(self):
 		if self._SampledPosition is None:
