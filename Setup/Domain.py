@@ -68,8 +68,10 @@ class Cartesian3D():
 
 			self._SeedOrigins = lst
 
-		return self._SeedOrigins
-		
+		return self._SeedOrigins		
+
+
+
 
 
 class CartesianLog3D():
@@ -166,7 +168,29 @@ class CartesianLog3D():
 
 
 
+class TemporalDomain():
+	def __init__(self,
+		RecurrenceType, 
+		StartTime,
+		EndTime,
+		TargetN
+		):
 
+		self.RecurrenceType = RecurrenceType   # static or dynamic
+		self.StartTime      = StartTime
+		self.EndTime        = EndTime
+		self.Num_Timesteps  = Num_Timesteps
+		self.Timeseries     = []               # Holds the times which have been computed so far
 
+	@property
+	def dt(self):
+		return (self.EndTime - self.StartTime) / self.Num_Timesteps
+
+	# allow dynamic timestepping? ie. v/F based criteria
+
+	def advance_dt(self, t):
+		return t + self.dt
+	
+	# For live we need to add interpolators to the time of the trajectory
 
 

@@ -1,10 +1,10 @@
 """
 This file computes the density perturbations created by the perturbers prescribed in InitialiseTrajectory.py. 
 """
-import RootFinder as rf
+import Solver.RootFinder as rf
 import numpy as np
-import Method_cpp
-from Method_cpp import bfs3d, UniqueArray_4d, Alpha3d
+import Solver.Method_cpp
+from Solver.Method_cpp import bfs3d, UniqueArray_4d, Alpha3d
 
 
 class DensityWakeSolver():

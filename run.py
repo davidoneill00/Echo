@@ -1,7 +1,8 @@
-from Domain import Cartesian3D
-from Method import DensityWakeSolver, Walk
-from Trajectory import Trajectory
+from Setup.Domain import Cartesian3D
+from Solver.Method import DensityWakeSolver, Walk
+from Setup.Trajectory import Trajectory
 import numpy as np
+import matplotlib.pyplot as plt
 
 # ------------- Initialise problem -------------
 
@@ -11,12 +12,14 @@ t                   = 3.0
 n, N                = int(1e4), int(1e4)
 TrajectoryTest      = np.zeros([n,4])
 TrajectoryTest[:,0] = np.linspace(0,t,n)
-TrajectoryTest[:,1] = np.linspace(0,t,n) #np.sin(2*np.pi * TrajectoryTest[:,0]) 
-TrajectoryTest[:,2] = np.zeros(n)        #np.cos(2*np.pi * TrajectoryTest[:,0]) 
+# TrajectoryTest[:,1] = np.linspace(0,t,n) #np.sin(2*np.pi * TrajectoryTest[:,0]) 
+# TrajectoryTest[:,2] = np.zeros(n)        #np.cos(2*np.pi * TrajectoryTest[:,0]) 
+TrajectoryTest[:,1] = np.sin(2*np.pi * TrajectoryTest[:,0]) 
+TrajectoryTest[:,2] = np.cos(2*np.pi * TrajectoryTest[:,0]) 
 TrajectoryTest[:,3] = np.zeros(n)
 
 IniTraj = Trajectory(TrajectoryTest, N, plot=False)
-Domain  = Cartesian3D(rmin=0.01, SeedFraction = 0.02,
+Domain  = Cartesian3D(rmin=0.01, SeedFraction = 0.01,
         Resolution_x=200, Min_x=-3, Max_x=3,
         Resolution_y=200, Min_y=-3, Max_y=3,
         Resolution_z=200, Min_z=0, Max_z=3)
@@ -27,15 +30,18 @@ results, nroots, roots = method.single_wake(t, error_tol=3e-7, unique_tol=5e-4)
 
 
 
-import matplotlib.pyplot as plt
+
 
 plt.contourf(Domain.X, Domain.Y, (nroots[:,:,0]), cmap='magma')
 plt.colorbar()
 plt.show()
 
-plt.contourf(Domain.X, Domain.Y, np.log10(results[:,:,0]), cmap='jet', levels=np.linspace(-1,0.5,100))
+plt.contourf(Domain.X, Domain.Y, np.log10(results[:,:,0]), cmap='jet', levels=np.linspace(-1,1,100))
 plt.colorbar()
 plt.show()
+
+
+
 
 import sys
 sys.exit()
