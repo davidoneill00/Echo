@@ -1,0 +1,10 @@
+# TODO
+
+# Write NBody solver
+# Write global distribution class for many particles
+
+# Write combined integrator for gas + gravity
+
+# Design parallel programme
+
+# Checkpoints and saving

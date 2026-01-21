@@ -1,3 +1,7 @@
+
+
+# Use argparse in this file!
+
 from Setup.Domain import Cartesian3D
 from Solver.Method import DensityWakeSolver, Walk
 from Setup.Trajectory import Trajectory

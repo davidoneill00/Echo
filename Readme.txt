@@ -1,7 +1,16 @@
-arch -arm64 c++ -O3 -Wall -shared -std=c++17 -fPIC \
-  $(python -m pybind11 --includes) \
-  Method.cpp \
-  -o "Method_cpp$(python -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")" \
-  -undefined dynamic_lookup
 
-python run.py
+// 1: Requirement HDF5. Installation
+conda install -c conda-forge "hdf5>=1.14" h5py numpy
+
+// 2: Setting up a run. 
+  Write this later
+
+// 3: Running 
+rm -rf build
+mkdir build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j
+./echo
+
+// 4. Analysing Data
