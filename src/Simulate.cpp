@@ -11,7 +11,7 @@
 
 Simulate::Simulate(const SimConfig& cfg_in)
   : cfg(cfg_in),
-    Trajectory(cfg.time_i, cfg.mass_i, cfg.X_i, cfg.V_i, cfg.A_i, cfg.timelimiter, cfg.finite_timestep, cfg.RecordTimeseriesCadence),
+    Trajectory(cfg.time_i, cfg.mass_i, cfg.X_i, cfg.V_i, cfg.A_i, cfg.timelimiter, cfg.finite_timestep, cfg.RecordTrajectoryCadence),
     Domain(cfg.Nx, cfg.Ny, cfg.Nz, cfg.range_x, cfg.range_y, cfg.range_z, cfg.seed_fraction),
     Solver(Trajectory, Domain, cfg.cs, cfg.max_roots, cfg.unique_tol, cfg.error_tol, cfg.rho0, cfg.rmin)
 {}
@@ -62,7 +62,7 @@ void Simulate::run_fixed(
     // runtime options for simulation
     runtime.timelimiter             = cfg.timelimiter;
     runtime.finite_timestep         = cfg.finite_timestep;
-    runtime.RecordTimeseriesCadence = cfg.RecordTimeseriesCadence;
+    runtime.RecordTrajectoryCadence = cfg.RecordTrajectoryCadence;
 
     // solution storage
     alpha.Nx      = Domain.Resolution_x;
@@ -82,10 +82,28 @@ void Simulate::run_fixed(
             Trajectory.times(), Trajectory.masses(),
             Trajectory.positions(), Trajectory.velocities(), Trajectory.accelerations(),
             Trajectory.iteration_count(),
-            Trajectory.RecordTimeseriesCadence(),
-            /*force_t=*/{}, /*force_F=*/{},
+            Trajectory.RecordTrajectory_dt(),
+            Solver.force_times(), 
+            Solver.force_series(),
             &alpha);
-        std::cout << "Wrote checkpoints to: " << cfg.checkpoint_dir << "\n";
+
+            // const std::string& out_dir,
+            // int checkpoint_index,
+            // const FixedParams& fixed,
+            // const RuntimeParams& runtime,
+            // const std::vector<double>& t_series,
+            // const std::vector<double>& M_series,
+            // const std::vector<std::array<double,3>>& X_series,
+            // const std::vector<std::array<double,3>>& V_series,
+            // const std::vector<std::array<double,3>>& A_series,
+            // int iteration_saved,
+            // int RecordTimeseriesCadence_used,
+            // const std::vector<double>& force_t,
+            // const std::vector<std::array<double,3>>& force_F,
+            // const AlphaSnapshot* alpha_snapshot
+
+
+        std::cout << "[simulate] saved checkpoint number " << checkpoint_index << "\n";
         }
     checkpoint_index++;
     }

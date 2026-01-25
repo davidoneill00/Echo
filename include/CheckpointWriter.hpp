@@ -20,7 +20,7 @@ void save_checkpoint(
     const std::vector<std::array<double,3>>& V_series,
     const std::vector<std::array<double,3>>& A_series,
     int iteration_saved,
-    int RecordTimeseriesCadence_used,
+    double RecordTrajectoryCadence_used,
 
     const std::vector<double>& force_t,
     const std::vector<std::array<double,3>>& force_F,

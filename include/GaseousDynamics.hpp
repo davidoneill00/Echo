@@ -79,6 +79,7 @@ public:
 
     const std::array<double,3>& current_force() const noexcept { return CurrentForce; }
     const std::vector<std::array<double,3>>& force_series() const noexcept { return ForceSeries; }
+    const std::vector<double>& force_times() const noexcept { return ForceTimes; }
 
 
 private:
@@ -99,4 +100,5 @@ private:
     std::vector<double> RootValues(double t, const std::array<double,3> X, double a, double b);
     std::array<double,3> CurrentForce{};
     std::vector<std::array<double,3>> ForceSeries;
+    std::vector<double> ForceTimes;
 };

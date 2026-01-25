@@ -1,13 +1,5 @@
 """
 Echo checkpoint loader
-
-Usage:
-    import echo_checkpoint as chk
-    chk.load("checkpoints/checkpoint_000123.h5")
-
-    print(chk.Domain.X.shape)
-    print(chk.Trajectory.t)
-    print(chk.Alpha.data)
 """
 
 import h5py
@@ -19,19 +11,17 @@ import matplotlib.pyplot as plt
 # -----------------------------
 class _Domain: pass
 class _Trajectory: pass
-#class _Alpha: pass
 class _Params: pass
 
 Domain     = _Domain()
 Trajectory = _Trajectory()
-#Alpha      = _Alpha()
 Params     = _Params()
 
 # -----------------------------
 # Loader
 # -----------------------------
 def load(filename):
-    global Domain, Trajectory, Alpha, Params
+    global Domain, Trajectory, Alpha, Params, Force
 
     with h5py.File(filename, "r") as f:
 
@@ -64,7 +54,7 @@ def load(filename):
         Trajectory.A = f["/trajectory/A"][:]   # (N,3)
 
         Trajectory.iteration = f["/trajectory/iteration"][()]
-        Trajectory.cadence = f["/trajectory/RecordTimeseriesCadence_used"][()]
+        Trajectory.cadence = f["/trajectory/RecordTrajectoryCadence_used"][()]
 
         # -------------------------
         # Alpha (optional)
@@ -76,9 +66,43 @@ def load(filename):
             Alpha   = None
             Alpha_t = None
 
+        
+        Trajectory.F   = f["/force/F"][:]
+        Trajectory.F_t = f["/force/t"][:]
 
+def Ostriker99(v, c, t, rmin=0.05):
+    Mach = v/c
+    I    = 0.5 * np.log10(1 - 1/Mach/Mach) + np.log10(v*t/rmin)
+    F    = 4 * np.pi * I / Mach / Mach 
+    return F
 
-load("build/checkpoints/checkpoint_000002.h5")
+load("build/checkpoints/checkpoint_000001.h5")
 
-plt.contourf(Domain.x, Domain.y, np.log10(Alpha[:,:,Domain.Nz//2] + 1e-12), 100, vmin=-1, vmax=1, cmap='jet')
+#plt.plot(Trajectory.X[:,0], Trajectory.X[:,1])
+# plt.plot(Trajectory.t, Trajectory.X[:,0])
+# plt.plot(Trajectory.t, Trajectory.X[:,1])
+# plt.show()
+
+plt.contourf(Domain.x, Domain.y, np.log10(Alpha[:,:,0] + 1e-2), levels = np.linspace(-2, 1, 1000), cmap='jet')
+plt.colorbar()
 plt.show()
+
+# plt.title('Force Series')
+# plt.plot(Trajectory.F_t, Ostriker99(1, 0.5, Trajectory.F_t), c = 'black')
+# plt.plot(Trajectory.F_t, Trajectory.F)
+# plt.show()
+
+
+
+#plt.savefig('/Users/davidoneill/Desktop/ForceTimeseries1.pdf', dpi = 400)
+
+# crash mzps: 1024x1024x512
+# 828.319s  : 512x512x256
+# 115.068s  : 256x256x128
+# 17.3158s  : 128x128x64
+
+
+# Upsample procedure: Split entire domain into N^3 cells per voxel
+#                  (1) Far from individual perturber, have uniform split
+#                  (2) Near each perturber we call compute on much smaller region and embed
+#                  (3) Now have AMR on Nx*Ny*Nz*N^3 easuly able to resolve small and large scales!

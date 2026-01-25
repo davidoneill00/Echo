@@ -30,7 +30,7 @@ struct FixedParams {
 struct RuntimeParams {
     double timelimiter = 0.0;
     bool   finite_timestep = true;
-    int    RecordTimeseriesCadence = 1;
+    double RecordTrajectoryCadence = 0.001;
 };
 
 struct AlphaSnapshot {

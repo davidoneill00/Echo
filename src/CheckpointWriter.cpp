@@ -284,7 +284,7 @@ void save_checkpoint(
     const std::vector<std::array<double,3>>& V_series,
     const std::vector<std::array<double,3>>& A_series,
     int iteration_saved,
-    int RecordTimeseriesCadence_used,
+    double RecordTrajectoryCadence_used,
     const std::vector<double>& force_t,
     const std::vector<std::array<double,3>>& force_F,
     const AlphaSnapshot* alpha_snapshot
@@ -335,7 +335,7 @@ void save_checkpoint(
     // /params/runtime_saved
     write_scalar_double(f.id, "/params/runtime_saved/timelimiter", runtime.timelimiter);
     write_scalar_int   (f.id, "/params/runtime_saved/finite_timestep", runtime.finite_timestep ? 1 : 0);
-    write_scalar_int   (f.id, "/params/runtime_saved/RecordTimeseriesCadence", runtime.RecordTimeseriesCadence);
+    write_scalar_int   (f.id, "/params/runtime_saved/RecordTrajectoryCadence", runtime.RecordTrajectoryCadence);
 
     // /trajectory
     write_vec1d_double(f.id, "/trajectory/t", t_series);
@@ -350,7 +350,7 @@ void save_checkpoint(
     write_flat_2d_double(f.id, "/trajectory/A", A_flat, n, 3);
 
     write_scalar_int(f.id, "/trajectory/iteration", iteration_saved);
-    write_scalar_int(f.id, "/trajectory/RecordTimeseriesCadence_used", RecordTimeseriesCadence_used);
+    write_scalar_int(f.id, "/trajectory/RecordTrajectoryCadence_used", RecordTrajectoryCadence_used);
 
     // /force
     if (!force_t.empty()) {

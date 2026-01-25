@@ -29,8 +29,11 @@ target_link_libraries(echo PRIVATE
     ${HDF5_LIBRARIES}
 )
 
+
 target_compile_options(echo PRIVATE
   $<$<CONFIG:Release>:
+    -O3
+    -DNDEBUG
     -mcpu=native
     -ffp-contract=fast
     -fno-math-errno
@@ -38,6 +41,9 @@ target_compile_options(echo PRIVATE
   >
 )
 
+
+
 set_property(TARGET echo PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
+set_source_files_properties(src/Trajectory.cpp PROPERTIES COMPILE_OPTIONS "-fno-inline")
 
