@@ -29,6 +29,7 @@ public:
                    const std::array<double, 3>& velocity,
                    const std::array<double, 3>& acceleration);
 
+    // for checkpoints
     void rebuild_timeseries(const std::vector<double>& TrajectoryTimeseries,
                              const std::vector<double>& TrajectoryMasses,
                              const std::vector<std::array<double, 3>>& TrajectoryPositions,
@@ -36,6 +37,7 @@ public:
                              const std::vector<std::array<double, 3>>& TrajectoryAccelerations,
                              const int saved_iteration);
 
+    // Most expensive operation in code!
     OrbitalState interpolate(double t) const;
 
     double Timestep_dt(const std::array<double, 3>& Force) const;
@@ -50,7 +52,7 @@ public:
     const std::vector<std::array<double,3>>& accelerations() const noexcept { return Accelerations; }
 
     int iteration_count() const noexcept { return iteration; }
-    int RecordTimeseriesCadence() const noexcept { return record_cadence_; } // optional
+    int RecordTrajectoryCadence() const noexcept { return record_cadence_; } // optional
 
     std::size_t sample_count() const noexcept { return Timeseries.size(); }
 
@@ -64,6 +66,9 @@ private:
     std::vector<std::array<double, 3>> Positions;
     std::vector<std::array<double, 3>> Velocities;
     std::vector<std::array<double, 3>> Accelerations;
+    
+    // Precomputed time step denominators for fast interpolation (one-time cost)
+    mutable std::vector<double> denominators_;
 
     int iteration;
     int record_cadence_;
@@ -72,6 +77,9 @@ private:
 
     OrbitalState Initial{};
     OrbitalState Current{};
+
+    // Cached index for binary search optimization (mutable for use in const interpolate)
+    mutable std::size_t cached_index_ = 0;
 
     // initial state
     double time_i;

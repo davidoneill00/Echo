@@ -7,14 +7,14 @@
 
 inline constexpr double G = 1.0; // Newton G
 
-inline std::size_t left_index_bracketed(const std::vector<double>& ts, double t) {
-    if (ts.size() < 2) return 0;          // or throw
-    if (t <= ts.front()) return 0;
-    if (t >= ts.back())  return ts.size() - 2;
+// inline std::size_t left_index_bracketed(const std::vector<double>& ts, double t) {
+//     if (ts.size() < 2) return 0;          // or throw
+//     if (t <= ts.front()) return 0;
+//     if (t >= ts.back())  return ts.size() - 2;
 
-    auto it = std::lower_bound(ts.begin(), ts.end(), t);
-    return static_cast<std::size_t>(it - ts.begin()) - 1;
-}
+//     auto it = std::lower_bound(ts.begin(), ts.end(), t);
+//     return static_cast<std::size_t>(it - ts.begin()) - 1;
+// }
 
 inline std::vector<double> linspace(double start, double end, std::size_t num) {
     std::vector<double> result(num);

@@ -3,7 +3,7 @@
 conda install -c conda-forge "hdf5>=1.14" h5py numpy
 
 // 2: Setting up a run. 
-  Write this later
+Write this later
 
 // 3: Running 
 rm -rf build
@@ -14,3 +14,5 @@ cmake --build . -j
 ./echo
 
 // 4. Analysing Data
+source .echo311/bin/activate
+python plotting/plot.py

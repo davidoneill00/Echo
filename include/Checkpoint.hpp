@@ -13,7 +13,7 @@
 namespace checkpoint {
 
 struct FixedParams {
-    double seed_fraction = 0.0;
+    double seed_fraction       = 0.0;
     int    max_number_of_roots = 0;
     OrbitalState initial_state{};
 
@@ -21,16 +21,16 @@ struct FixedParams {
     std::array<double,2> range_x{}, range_y{}, range_z{};
 
     double sound_speed = 0.0;
-    double rho0 = 0.0;
-    double rmin = 0.0;
-    double error_tol = 0.0;
-    double unique_tol = 0.0;
+    double rho0        = 0.0;
+    double rmin        = 0.0;
+    double error_tol   = 0.0;
+    double unique_tol  = 0.0;
 };
 
 struct RuntimeParams {
-    double timelimiter = 0.0;
-    bool   finite_timestep = true;
-    int    RecordTimeseriesCadence = 1;
+    double timelimiter             = 0.0;
+    bool   finite_timestep         = true;
+    double RecordTrajectoryCadence = 0.001;
 };
 
 struct AlphaSnapshot {

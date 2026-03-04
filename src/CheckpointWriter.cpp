@@ -132,6 +132,44 @@ static void delete_if_exists(hid_t file, const std::string& path) {
 }
 
 // ----------------------------
+// Dataset properties helper with chunking and compression
+// ----------------------------
+static hid_t create_dataset_properties(const hsize_t* dims, int ndim) {
+    hid_t dcpl = H5Pcreate(H5P_DATASET_CREATE);
+    if (dcpl < 0) return -1;
+
+    // Set appropriate chunk sizes based on dimensionality
+    hsize_t chunk_dims[H5S_MAX_RANK];
+    if (ndim == 3) {
+        // For 3D (Alpha data): 64x64x64 chunks (~32 MB each)
+        chunk_dims[0] = std::min(dims[0], (hsize_t)64);
+        chunk_dims[1] = std::min(dims[1], (hsize_t)64);
+        chunk_dims[2] = std::min(dims[2], (hsize_t)64);
+    } else if (ndim == 2) {
+        // For 2D (trajectory): 256x8 chunks
+        chunk_dims[0] = std::min(dims[0], (hsize_t)256);
+        chunk_dims[1] = std::min(dims[1], (hsize_t)8);
+    } else if (ndim == 1) {
+        // For 1D (vectors): 1024-element chunks
+        chunk_dims[0] = std::min(dims[0], (hsize_t)1024);
+    }
+
+    // Set chunking
+    if (H5Pset_chunk(dcpl, ndim, chunk_dims) < 0) {
+        H5Pclose(dcpl);
+        return -1;
+    }
+
+    // Enable GZIP compression level 4 (good compression, still fast)
+    if (H5Pset_deflate(dcpl, 4) < 0) {
+        H5Pclose(dcpl);
+        return -1;
+    }
+
+    return dcpl;
+}
+
+// ----------------------------
 // Writers
 // ----------------------------
 static void write_scalar_double(hid_t file, const std::string& path, double value) {
@@ -142,11 +180,16 @@ static void write_scalar_double(hid_t file, const std::string& path, double valu
     H5ObjHandle space(H5Screate_simple(1, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple scalar failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 1);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_DOUBLE, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     if (H5Dwrite(dset.id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value) < 0)
@@ -161,11 +204,16 @@ static void write_scalar_int(hid_t file, const std::string& path, int value) {
     H5ObjHandle space(H5Screate_simple(1, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple scalar failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 1);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_INT, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     if (H5Dwrite(dset.id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value) < 0)
@@ -180,11 +228,16 @@ static void write_scalar_u64(hid_t file, const std::string& path, std::uint64_t 
     H5ObjHandle space(H5Screate_simple(1, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple scalar failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 1);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_UINT64, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     if (H5Dwrite(dset.id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value) < 0)
@@ -199,11 +252,16 @@ static void write_vec1d_double(hid_t file, const std::string& path, const std::v
     H5ObjHandle space(H5Screate_simple(1, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple 1d failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 1);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_DOUBLE, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     const void* buf = v.empty() ? nullptr : static_cast<const void*>(v.data());
@@ -224,11 +282,16 @@ static void write_flat_2d_double(hid_t file, const std::string& path,
     H5ObjHandle space(H5Screate_simple(2, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple 2d failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 2);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_DOUBLE, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     const void* buf = flat.empty() ? nullptr : static_cast<const void*>(flat.data());
@@ -249,11 +312,16 @@ static void write_flat_3d_double(hid_t file, const std::string& path,
     H5ObjHandle space(H5Screate_simple(3, dims, nullptr), H5Sclose);
     if (space.id < 0) throw_h5("H5Screate_simple 3d failed");
 
+    hid_t dcpl = create_dataset_properties(dims, 3);
+    if (dcpl < 0) throw_h5("create_dataset_properties failed for " + path);
+
     H5ObjHandle dset(
         H5Dcreate2(file, path.c_str(), H5T_NATIVE_DOUBLE, space.id,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT),
+                   H5P_DEFAULT, dcpl, H5P_DEFAULT),
         H5Dclose
     );
+    H5Pclose(dcpl);
+
     if (dset.id < 0) throw_h5("H5Dcreate2 failed for " + path);
 
     const void* buf = flat.empty() ? nullptr : static_cast<const void*>(flat.data());
@@ -284,7 +352,7 @@ void save_checkpoint(
     const std::vector<std::array<double,3>>& V_series,
     const std::vector<std::array<double,3>>& A_series,
     int iteration_saved,
-    int RecordTimeseriesCadence_used,
+    int RecordTrajectoryCadence_used,
     const std::vector<double>& force_t,
     const std::vector<std::array<double,3>>& force_F,
     const AlphaSnapshot* alpha_snapshot
@@ -335,7 +403,7 @@ void save_checkpoint(
     // /params/runtime_saved
     write_scalar_double(f.id, "/params/runtime_saved/timelimiter", runtime.timelimiter);
     write_scalar_int   (f.id, "/params/runtime_saved/finite_timestep", runtime.finite_timestep ? 1 : 0);
-    write_scalar_int   (f.id, "/params/runtime_saved/RecordTimeseriesCadence", runtime.RecordTimeseriesCadence);
+    write_scalar_int   (f.id, "/params/runtime_saved/RecordTrajectoryCadence", runtime.RecordTrajectoryCadence);
 
     // /trajectory
     write_vec1d_double(f.id, "/trajectory/t", t_series);
@@ -350,7 +418,7 @@ void save_checkpoint(
     write_flat_2d_double(f.id, "/trajectory/A", A_flat, n, 3);
 
     write_scalar_int(f.id, "/trajectory/iteration", iteration_saved);
-    write_scalar_int(f.id, "/trajectory/RecordTimeseriesCadence_used", RecordTimeseriesCadence_used);
+    write_scalar_int(f.id, "/trajectory/RecordTrajectoryCadence_used", RecordTrajectoryCadence_used);
 
     // /force
     if (!force_t.empty()) {

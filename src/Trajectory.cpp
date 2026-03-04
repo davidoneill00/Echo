@@ -26,10 +26,12 @@ LiveTrajectory::LiveTrajectory(double time,
       require_finite_dt(finite_timestep),
       record_cadence_(cadence)
 {
-    if (record_cadence_ <= 0) throw std::runtime_error("RecordTimeseriesCadence must be > 0");
+    if (record_cadence_ <= 0) throw std::runtime_error("RecordTrajectoryCadence must be > 0");
     iteration = 0;                                           // initialisation  
     Initial   = OrbitalState{time_i, mass_i, position_i, velocity_i, acceleration_i};      
+    //Initial   = OrbitalState{time_i, position_i, velocity_i, acceleration_i};      
     add_event(time, mass, position, velocity, acceleration); // add the initial seed to the timeseries
+    //add_event(time, position, velocity, acceleration);
     
 }
 
@@ -63,8 +65,16 @@ void LiveTrajectory::add_event(
             Positions.erase(Positions.end() - 2);
             Velocities.erase(Velocities.end() - 2);
             Accelerations.erase(Accelerations.end() - 2);
+            denominators_.erase(denominators_.end() - 1);
         }
     }
+    
+    // Maintain precomputed denominators for fast interpolation
+    if (Timeseries.size() >= 2) {
+        double denom = Timeseries.back() - Timeseries[Timeseries.size() - 2];
+        denominators_.push_back(denom);
+    }
+    
     ++iteration;
 }
 
@@ -84,6 +94,9 @@ void LiveTrajectory::rebuild_timeseries(
     if (TrajectoryMasses.size() != n || TrajectoryPositions.size() != n || TrajectoryVelocities.size() != n || TrajectoryAccelerations.size() != n)
         throw std::runtime_error("rebuild_timeseries: size mismatch");
 
+    // if (TrajectoryPositions.size() != n || TrajectoryVelocities.size() != n || TrajectoryAccelerations.size() != n)
+    //     throw std::runtime_error("rebuild_timeseries: size mismatch");
+
     if (TrajectoryTimeseries.front() < Initial.t)
         throw std::runtime_error("rebuild_timeseries: first time < Initial.t");
 
@@ -99,7 +112,7 @@ void LiveTrajectory::rebuild_timeseries(
     Velocities.clear();
     Accelerations.clear();
 
-    // 4) copy exactly
+    // Copy vector data
     Timeseries    = TrajectoryTimeseries;
     Mass          = TrajectoryMasses;
     Positions     = TrajectoryPositions;
@@ -112,10 +125,18 @@ void LiveTrajectory::rebuild_timeseries(
     //Initial = OrbitalState{Timeseries.front(), Mass.front(),
     //                       Positions.front(), Velocities.front(), Accelerations.front()};
 
-    Current = OrbitalState{Timeseries.back(), Mass.back(),
-                           Positions.back(), Velocities.back(), Accelerations.back()};
+    Current = OrbitalState{Timeseries.back(), Mass.back(), Positions.back(), Velocities.back(), Accelerations.back()};
+    //Current = OrbitalState{Timeseries.back(), Positions.back(), Velocities.back(), Accelerations.back()};
 
     iteration = saved_iteration;
+    cached_index_ = 0;  // Reset cache after rebuild
+    
+    // Precompute all time step denominators for fast interpolation
+    denominators_.clear();
+    denominators_.reserve(Timeseries.size() - 1);
+    for (std::size_t i = 0; i < Timeseries.size() - 1; ++i) {
+        denominators_.push_back(Timeseries[i + 1] - Timeseries[i]);
+    }
 }
 
 double LiveTrajectory::Timestep_dt(const std::array<double, 3>& Force) const {
@@ -125,7 +146,8 @@ double LiveTrajectory::Timestep_dt(const std::array<double, 3>& Force) const {
 
     for (std::size_t dim=0; dim<3; ++dim) {
         Momentum2 += (Current.M * Current.V[dim])*(Current.M * Current.V[dim]);
-        Force2    += Force[dim] * Force[dim];
+        //Momentum2 += Current.V[dim]*Current.V[dim];
+        Force2    += Force[dim] * Force[dim]; 
     }
 
     if (Force2 == 0.0) {
@@ -142,22 +164,50 @@ OrbitalState LiveTrajectory::interpolate(double t) const {
     if (Timeseries.size() < 2) throw std::runtime_error("Need at least 2 samples");
     if (t <= Timeseries.front()) return OrbitalState{t, Mass.front(), Positions.front(), Velocities.front(), Accelerations.front()};
     if (t >= Timeseries.back())  return OrbitalState{t, Mass.back() , Positions.back() , Velocities.back() , Accelerations.back()};
+    // if (t <= Timeseries.front()) return OrbitalState{t, Positions.front(), Velocities.front(), Accelerations.front()};
+    // if (t >= Timeseries.back())  return OrbitalState{t, Positions.back() , Velocities.back() , Accelerations.back()};
 
-    if (Positions.size() != Timeseries.size() ||
-        Mass.size() != Timeseries.size() ||
-        Velocities.size() != Timeseries.size() ||
-        Accelerations.size() != Timeseries.size())
-        throw std::runtime_error("Series sizes mismatch");
 
-    std::size_t i = left_index_bracketed(Timeseries, t);
+    // Try cached index first (huge win for sequential/nearby queries in bfs3d)
+    std::size_t i = cached_index_;
+    
+    // Ensure i is valid (handle edge case where cached_index_ was at end)
+    if (i >= Timeseries.size() - 1) i = Timeseries.size() - 2;
+    
+    // Check if t is in [Timeseries[i], Timeseries[i+1]]
+    bool found = (t >= Timeseries[i] && t <= Timeseries[i + 1]);
+    
+    // If not found with cached index, try nearby indices first (local search)
+    // This is faster than binary search for sequential or nearby queries
+    if (!found) {
+        // Try i-1 (previous interval)
+        if (i > 0 && t >= Timeseries[i-1] && t <= Timeseries[i]) {
+            i = i - 1;
+            found = true;
+        }
+        // Try i+2 (next interval after cached)
+        else if (i + 2 < Timeseries.size() && t >= Timeseries[i+1] && t <= Timeseries[i+2]) {
+            i = i + 1;
+            found = true;
+        }
+    }
+    
+    // Only fall back to binary search if local search failed
+    if (!found) {
+        auto it = std::lower_bound(Timeseries.begin(), Timeseries.end(), t);
+        i = static_cast<std::size_t>(it - Timeseries.begin()) - 1;
+    }
+    
+    cached_index_ = i;  // Update cache for next call
+    
     std::size_t j = i + 1;
-
     double t0    = Timeseries[i];
     double t1    = Timeseries[j];
-    double denom = (t1 - t0);
+    double denom = denominators_[i];  // Use precomputed denominator (O(1) lookup instead of subtraction)
 
     if (denom == 0.0) {
         return OrbitalState{t, Mass[i], Positions[i], Velocities[i], Accelerations[i]};
+        //return OrbitalState{t, Positions[i], Velocities[i], Accelerations[i]};
     }
 
     double u = (t - t0) / denom;

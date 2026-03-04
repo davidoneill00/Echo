@@ -27,7 +27,7 @@ struct SimConfig {
   // runtime params
   double timelimiter;
   bool finite_timestep;
-  int RecordTimeseriesCadence;
+  int RecordTrajectoryCadence;
 
   // output
   std::string checkpoint_dir;

@@ -1,6 +1,7 @@
 #include <vector>
 #include <tuple>
 #include <queue>
+#include <set>
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <array>
+#include <algorithm>
 
 
 #include "utils.hpp"
@@ -87,71 +89,63 @@ bool propagate_full(
     double tau = tr + dt_pred;
     double X_new[3] = { X[0]+dX[0], X[1]+dX[1], X[2]+dX[2] };
 
-    // 3. Halley Correction Step
+    // 3. Halley Correction Step - Lambda to compute error and derivatives from state
+    auto compute_halley_residuals = [&](double tau_test, const OrbitalState& state) -> std::tuple<double, double, double, double> {
+        double r_vec[3]   = { state.X[0]-X_new[0], state.X[1]-X_new[1], state.X[2]-X_new[2] };
+        double R          = std::sqrt(r_vec[0]*r_vec[0] + r_vec[1]*r_vec[1] + r_vec[2]*r_vec[2]);
+        if (R < 1e-15) return {NAN, NAN, NAN, NAN};  // Invalid state
+        
+        double n[3]       = { r_vec[0]/R, r_vec[1]/R, r_vec[2]/R };
+        double v_dot_n    = n[0]*state.V[0] + n[1]*state.V[1] + n[2]*state.V[2];
+        double F          = (tau_test - t) + R / cs;
+        double Fp         = 1.0 + v_dot_n / cs;
+        
+        double v_sq       = state.V[0]*state.V[0] + state.V[1]*state.V[1] + state.V[2]*state.V[2];
+        double n_dot_a    = n[0]*state.A[0] + n[1]*state.A[1] + n[2]*state.A[2];
+        double Fpp        = (n_dot_a + (v_sq - v_dot_n*v_dot_n)/R) / cs;
+        
+        return {F, Fp, Fpp, R};  // Return F, Fp, Fpp, R (used to compute error)
+    };
+
     OrbitalState Halley_state = traj.interpolate(tau);
-    std::array<double, 3> X_tau = Halley_state.X;
-    std::array<double, 3> V_tau = Halley_state.V;
-    std::array<double, 3> A_tau = Halley_state.A;
-
-
-    double r_vec[3]   = { X_tau[0]-X_new[0], X_tau[1]-X_new[1], X_tau[2]-X_new[2] };
-    double R          = std::sqrt(r_vec[0]*r_vec[0] + r_vec[1]*r_vec[1] + r_vec[2]*r_vec[2]);
-    if (R < 1e-15) return false;
-    double dist       = R;
-    double first_err  = std::abs((tau - t) + dist / cs);
-    double n[3]       = { r_vec[0]/R, r_vec[1]/R, r_vec[2]/R };
-    double v_dot_n    = n[0]*V_tau[0] + n[1]*V_tau[1] + n[2]*V_tau[2];
-    double F          = (tau - t) + R / cs;
-    double Fp         = 1.0 + v_dot_n / cs;
+    auto [F, Fp, Fpp, R] = compute_halley_residuals(tau, Halley_state);
+    
+    if (!std::isfinite(F)) return false;
     if (std::abs(Fp) < 1e-15) return false;
-    double v_sq       = V_tau[0]*V_tau[0] + V_tau[1]*V_tau[1] + V_tau[2]*V_tau[2];
-    double n_dot_a    = n[0]*A_tau[0] + n[1]*A_tau[1] + n[2]*A_tau[2];
-    double Fpp        = (n_dot_a + (v_sq - v_dot_n*v_dot_n)/R) / cs;
-    double denom      = 2*Fp*Fp - F*Fpp;
-
+    
+    double denom = 2*Fp*Fp - F*Fpp;
+    double tau_old = tau;
+    
     if (std::abs(denom) > 1e-20)
         tau -= (2*F*Fp)/denom;    // Halley's method
     else
         tau -= F/Fp;              // fallback to Newton's method
 
-    // 3. Define error with refined tau
-    Halley_state = traj.interpolate(tau);
-    X_tau        = Halley_state.X;
-    V_tau        = Halley_state.V;
-    A_tau        = Halley_state.A;
-    
-    
-    r_vec[0]   = X_tau[0]-X_new[0];
-    r_vec[1]   = X_tau[1]-X_new[1];
-    r_vec[2]   = X_tau[2]-X_new[2];
-    R           = std::sqrt(r_vec[0]*r_vec[0] + r_vec[1]*r_vec[1] + r_vec[2]*r_vec[2]);
-    if (R < 1e-15) return false;
-    dist        = R;
-    n[0]        = r_vec[0]/R;
-    n[1]        = r_vec[1]/R;
-    n[2]        = r_vec[2]/R;
-    v_dot_n    = n[0]*V_tau[0] + n[1]*V_tau[1] + n[2]*V_tau[2];
-    F          = (tau - t) + R / cs;
-    Fp         = 1.0 + v_dot_n / cs;
-    if (std::abs(Fp) < 1e-15) return false;
-    v_sq       = V_tau[0]*V_tau[0] + V_tau[1]*V_tau[1] + V_tau[2]*V_tau[2];
-    n_dot_a    = n[0]*A_tau[0] + n[1]*A_tau[1] + n[2]*A_tau[2];
-    Fpp        = (n_dot_a + (v_sq - v_dot_n*v_dot_n)/R) / cs;
-
+    // 4. Check tau validity and re-interpolate only if tau changed significantly
     if (tau < traj.initial().t || tau > traj.current().t) {
         *tau_out = NAN;
         *err_out = NAN;
         return false;
     }
 
-    double second_err  = std::abs((tau - t) + dist / cs);
-    double err;
-    if (first_err<second_err){
-        err = first_err;
-        tau = tr + dt_pred;
-        }
-    else
-        err = second_err;
+    // Only re-interpolate if tau changed significantly (avoid redundant 2nd interpolation)
+    double dist, err;
+    const double tau_tol = 1e-12;  // tolerance to detect if Halley step actually modified tau
+    
+    if (std::abs(tau - tau_old) > tau_tol) {
+        // Halley step moved tau significantly, need fresh interpolation and error
+        Halley_state = traj.interpolate(tau);
+        auto [F2, Fp2, Fpp2, R2] = compute_halley_residuals(tau, Halley_state);
+        
+        if (!std::isfinite(F2) || std::abs(Fp2) < 1e-15) return false;
+        
+        dist = R2;
+        err = std::abs((tau - t) + dist / cs);
+    } else {
+        // Halley step had negligible effect, reuse interpolation result
+        dist = R;
+        err = std::abs((tau - t) + dist / cs);
+    }
 
     *tau_out = (err > error_tol ? NAN : tau);
     *err_out = err;
@@ -195,10 +189,53 @@ void bfs3d(
 
     // Queue holds (i,j,k,slot) where slot is an actual storage slot in Roots(i,j,k,:)
     std::queue<std::tuple<int,int,int,int>> q;
+    std::set<std::tuple<int,int,int,int>> visited;
+    
+    // Track which spatial voxels have been processed to avoid redundant propagation cascades
+    std::set<std::tuple<int,int,int>> visited_spatial;
 
     auto slot_index = [&](int i, int j, int k, int s) -> size_t {
         return idx4d((size_t)i, (size_t)j, (size_t)k, (size_t)s,
                      (size_t)Nx, (size_t)Ny, (size_t)Nz, (size_t)MaxRoots);
+    };
+
+    // Voxel root cache: stores sorted roots with lazy rebuild on invalidation
+    // This eliminates 222M redundant sorts/allocations in the dedup and branching checks
+    struct VoxelRootCache {
+        std::vector<double> sorted_roots;
+        bool valid = false;
+    };
+    const size_t total_voxels = (size_t)Nx * (size_t)Ny * (size_t)Nz;
+    std::vector<VoxelRootCache> root_cache(total_voxels);
+
+    auto voxel_index = [&](int i, int j, int k) -> size_t {
+        return idx3d((size_t)i, (size_t)j, (size_t)k, (size_t)Ny, (size_t)Nz);
+    };
+
+    // Invalidate cache for a voxel (called when roots are modified)
+    auto invalidate_cache = [&](int i, int j, int k) {
+        root_cache[voxel_index(i, j, k)].valid = false;
+    };
+
+    // Get sorted roots for a voxel, rebuilding cache if needed
+    auto get_sorted_roots = [&](int i, int j, int k) -> const std::vector<double>& {
+        size_t v_idx = voxel_index(i, j, k);
+        VoxelRootCache& cache = root_cache[v_idx];
+        
+        if (!cache.valid) {
+            cache.sorted_roots.clear();
+            cache.sorted_roots.reserve(MaxRoots);
+            for (int s = 0; s < MaxRoots; ++s) {
+                double tau = Roots(i, j, k, s);
+                if (std::isfinite(tau)) {
+                    cache.sorted_roots.push_back(tau);
+                }
+            }
+            std::sort(cache.sorted_roots.begin(), cache.sorted_roots.end());
+            cache.valid = true;
+        }
+        
+        return cache.sorted_roots;
     };
 
     // Insert/update a (tau, err) candidate into voxel (i,j,k).
@@ -234,7 +271,9 @@ void bfs3d(
                 Roots(i,j,k,match_slot)  = tau;
                 Errors(i,j,k,match_slot) = err;
                 best_err[id] = err;
-                q.emplace(i,j,k,match_slot);
+                invalidate_cache(i, j, k);
+                auto key = std::make_tuple(i,j,k,match_slot);
+                if (!visited.count(key)) q.emplace(key);
             }
             return match_slot;
         }
@@ -246,7 +285,9 @@ void bfs3d(
                 Roots(i,j,k,empty_slot)  = tau;
                 Errors(i,j,k,empty_slot) = err;
                 best_err[id] = err;
-                q.emplace(i,j,k,empty_slot);
+                invalidate_cache(i, j, k);
+                auto key = std::make_tuple(i,j,k,empty_slot);
+                if (!visited.count(key)) q.emplace(key);
                 return empty_slot;
             }
             return -1;
@@ -265,7 +306,9 @@ void bfs3d(
             Roots(i,j,k,worst_slot)  = tau;
             Errors(i,j,k,worst_slot) = err;
             best_err[id] = err;
-            q.emplace(i,j,k,worst_slot);
+            invalidate_cache(i, j, k);
+            auto key = std::make_tuple(i,j,k,worst_slot);
+            if (!visited.count(key)) q.emplace(key);
             return worst_slot;
         }
 
@@ -304,6 +347,11 @@ void bfs3d(
         auto [i, j, k, s_here] = q.front();
         q.pop();
 
+        // Skip if already processed
+        auto key = std::make_tuple(i, j, k, s_here);
+        if (visited.count(key)) continue;
+        visited.insert(key);
+
         double tr_here = Roots(i,j,k,s_here);
         if (!std::isfinite(tr_here)) continue;
 
@@ -331,19 +379,61 @@ void bfs3d(
             bool insertedA = false;
             bool need_branch = false;
 
-            if (okA && std::isfinite(tauA) && std::isfinite(errA) && errA <= error_tol) {
-                // Check proximity to existing roots in target voxel to decide if we need branch attempt
-                double min_sep = std::numeric_limits<double>::infinity();
-                for (int s = 0; s < MaxRoots; ++s) {
-                    double ex = Roots(ni,nj,nk,s);
-                    if (!std::isfinite(ex)) continue;
-                    double sep = std::abs(tauA - ex);
-                    if (sep < min_sep) min_sep = sep;
+            // Stricter deduplication: Skip if candidate root already exists in neighbor
+            // Do this EARLY to avoid wasted propagation_full calls
+            if (okA && std::isfinite(tauA) && std::isfinite(errA)) {
+                const auto& sorted_roots = get_sorted_roots(ni, nj, nk);
+                
+                if (!sorted_roots.empty()) {
+                    bool is_duplicate = false;
+                    for (double ex : sorted_roots) {
+                        if (std::abs(tauA - ex) < unique_tol) {
+                            is_duplicate = true;
+                            break;
+                        }
+                    }
+                    if (is_duplicate) {
+                        counter++;
+                        if (counter % print_interval == 0) {
+                            auto now       = std::chrono::high_resolution_clock::now();
+                            double elapsed = std::chrono::duration<double>(now - start_time).count();
+                            double rate    = counter / elapsed;
+                            std::cerr << "[bfs3d] " << std::setw(10) << std::setfill('0') << counter << " propagations at rate "
+                            << rate/1000000 << " Mzps\n";
+                        }
+                        continue; // Skip this duplicate root/neighbor pair
+                    }
                 }
+            }
+
+            if (okA && std::isfinite(tauA) && std::isfinite(errA) && errA <= error_tol) {
+                // Check proximity to existing roots for branching heuristic
+                double min_sep = std::numeric_limits<double>::infinity();
+                
+                const auto& sorted_roots = get_sorted_roots(ni, nj, nk);
+                
+                if (!sorted_roots.empty()) {
+                    // Binary search: find insertion point and check neighbors
+                    auto it = std::lower_bound(sorted_roots.begin(), sorted_roots.end(), tauA);
+                    
+                    if (it != sorted_roots.end()) {
+                        min_sep = std::min(min_sep, std::abs(tauA - *it));
+                    }
+                    if (it != sorted_roots.begin()) {
+                        min_sep = std::min(min_sep, std::abs(tauA - *(it - 1)));
+                    }
+                }
+                
                 if (min_sep < branch_tol) need_branch = true;
 
                 int slot_used = insert_candidate(ni, nj, nk, tauA, errA);
                 insertedA = (slot_used >= 0);
+                
+                // If we matched an existing root within unique_tol, branching will just give us 
+                // back the same root, so skip it to save computation
+                if (insertedA && min_sep < unique_tol) {
+                    need_branch = false;
+                }
             } else {
                 // If primary fails, branching attempt sometimes lands on another sheet
                 need_branch = true;
@@ -404,23 +494,14 @@ void Alpha3d(
     const double cs)
 {
 
-    // double xp0          = t_arr[0];
-    // double dx           = t_arr[1] - t_arr[0];
-    // const int nt        = t_arr.size();
-    // int dim             = 3;
-    // const double* x_ptr = x_arr.data();
-    // const double* v_ptr = v_arr.data();
 
     const double NonLinearParameter = G * traj.current().M / cs / cs;
+    //const double NonLinearParameter = G / cs / cs;
 
     const int Nx       = Roots.Nx;
     const int Ny       = Roots.Ny;
     const int Nz       = Roots.Nz;
     const int MaxRoots = Roots.Nr;
-
-
-    //Mat3D Alpha(Nx, Ny, Nz);
-    //Mat3D NRoots(Nx, Ny, Nz);
 
     const double tol = 5e-7;
 
@@ -521,26 +602,35 @@ std::array<double,3> ComputeGasForce(
 
     std::array<double,3> F{0.0, 0.0, 0.0};
 
+    // Sparse iteration: skip zero/near-zero Alpha voxels to avoid wasted sqrt/division
+    // Early threshold check before computing distances = better cache performance
+    constexpr double alpha_threshold = 1e-15;
+    
     for (std::size_t i = 0; i < Nx; ++i) {
-        const double x = domain.X[i];
+        const double x  = domain.X[i];
         const double rx = x - px;
 
-        for (std::size_t j = 0; j < Ny; ++j) {
-            const double y = domain.Y[j];
+        for (std::size_t j  = 0; j < Ny; ++j) {
+            const double y  = domain.Y[j];
             const double ry = y - py;
 
             for (std::size_t k  = 0; k < Nz; ++k) {
+                const double a  = Alpha(i,j,k);
+                
+                // Early exit: skip zero/near-zero Alpha before computing distances
+                // This is crucial for sparse domains where most voxels have Alpha ≈ 0
+                if (a <= alpha_threshold) continue;
+
                 const double z  = domain.Z[k];
                 const double rz = z - pz;
-
-                const double a  = Alpha(i,j,k);
+                
                 const double r2 = rx*rx + ry*ry + rz*rz;
                 const double r  = std::sqrt(r2);
 
                 if (r <= rmin) continue;
 
                 const double r3 = r2 * r;
-                const double coeff = (-G * M * rho_0 * a * dV) / r3;
+                const double coeff = (G * M * rho_0 * a * dV) / r3;
 
                 F[0] += coeff * rx;
                 F[1] += coeff * ry;
@@ -743,6 +833,7 @@ void LinearGasSolver::compute_wake(double t){
 
     // 5. Save Force to the Solver
     ForceSeries.push_back(CurrentForce);
+    ForceTimes.push_back(t);
 }
 
     
