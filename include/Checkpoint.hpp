@@ -37,6 +37,8 @@ struct AlphaSnapshot {
     std::vector<double> alpha_flat;
     std::size_t Nx = 0, Ny = 0, Nz = 0;
     double t_alpha = 0.0;
+    int level = 0;
+    std::array<double,2> range_x{}, range_y{}, range_z{};
 };
 
 inline std::string checkpoint_filename(const std::string& dir, int index) {

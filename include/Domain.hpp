@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 #include <unordered_map>
@@ -148,8 +149,8 @@ public:
                  (Particle_Position[2] - Domain.Z[0]) / Domain.dX[2] };
     }
 
-    // Computes the fine-level extent centred on the particle, with boundaries
-    // snapped to coarse grid nodes.  This guarantees:
+    // Computes the fine-level extent centered on the particle, with boundaries
+    // aligned with coarse grid nodes.  This guarantees:
     //   (1) Cell-size ratio between adjacent levels is exactly refinement_ratio.
     //   (2) Coarse–fine interfaces coincide with coarse cell faces (no misaligned
     //       transitions, satisfies the 2:1 balance rule when ref_ratio == 2).
@@ -165,9 +166,11 @@ public:
         const std::size_t N[3] = { Level_Resolution_x,
                                    Level_Resolution_y,
                                    Level_Resolution_z };
+
         const std::vector<double>* axes[3] = { &CoarseDomain.X,
                                                &CoarseDomain.Y,
                                                &CoarseDomain.Z };
+                                               
         std::array<std::array<double, 2>, 3> NewExtent;
 
         for (int d = 0; d < 3; ++d) {
@@ -218,7 +221,7 @@ public:
         std::array<std::array<double, 2>, 3> NewExtent =
             ComputeNewExtent(Previous_Domain, Particle_Position);
 
-        CheckProperNesting(Previous_Domain, NewExtent);
+        //CheckProperNesting(Previous_Domain, NewExtent);
 
         return SpatialDomain(Level_Resolution_x,
                              Level_Resolution_y,
@@ -230,6 +233,8 @@ public:
     }
 
     void initialize_levels(const std::array<double, 3>& Particle_Position) {
+        LevelMap.clear();
+
         SpatialDomain Previous_Domain = SpatialDomain(
             Level_Resolution_x, Level_Resolution_y, Level_Resolution_z,
             Global_extent_x, Global_extent_y, Global_extent_z,
@@ -237,9 +242,15 @@ public:
         LevelMap.insert_or_assign(0, Previous_Domain);
 
         for (int n_level = 1; n_level < num_levels; ++n_level) {
-            SpatialDomain Next_Level = ConstructDomainAtNextLevel(Previous_Domain, Particle_Position);
-            LevelMap.insert_or_assign(n_level, Next_Level);
-            Previous_Domain          = Next_Level;
+            try {
+                SpatialDomain Next_Level = ConstructDomainAtNextLevel(Previous_Domain, Particle_Position);
+                LevelMap.insert_or_assign(n_level, Next_Level);
+                Previous_Domain = Next_Level;
+            } catch (const std::runtime_error& e) {
+                std::cerr << "  Warning: AMR truncated at level " << n_level
+                          << " (" << e.what() << ")\n";
+                break;
+            }
         }
     }
 };

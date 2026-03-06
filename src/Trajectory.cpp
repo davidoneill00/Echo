@@ -7,6 +7,41 @@
 #include "utils.hpp"
 
 
+// ---------------------------------------------------------------
+// FixedTrajectory
+// ---------------------------------------------------------------
+
+FixedTrajectory::FixedTrajectory(
+    const std::vector<double>&               T,
+    const std::vector<double>&               M,
+    const std::vector<std::array<double,3>>& X,
+    const std::vector<std::array<double,3>>& V,
+    const std::vector<std::array<double,3>>& A)
+    // Construct LiveTrajectory with the first point; rebuild_timeseries
+    // then replaces all internal vectors with the complete arrays
+    : traj_(T.at(0), M.at(0), X.at(0), V.at(0), A.at(0),
+            /*timelimiter=*/0.0, /*finite_timestep=*/false, /*cadence=*/1)
+{
+    if (T.size() < 2)
+        throw std::runtime_error("FixedTrajectory requires at least 2 points.");
+    traj_.rebuild_timeseries(T, M, X, V, A, static_cast<int>(T.size()));
+}
+
+OrbitalState FixedTrajectory::interpolate(double t) const { return traj_.interpolate(t); }
+
+const OrbitalState& FixedTrajectory::initial() const noexcept { return traj_.initial(); }
+const OrbitalState& FixedTrajectory::current() const noexcept { return traj_.current(); }
+
+const std::vector<double>& FixedTrajectory::times()         const noexcept { return traj_.times(); }
+const std::vector<double>& FixedTrajectory::masses()        const noexcept { return traj_.masses(); }
+const std::vector<std::array<double,3>>& FixedTrajectory::positions()     const noexcept { return traj_.positions(); }
+const std::vector<std::array<double,3>>& FixedTrajectory::velocities()    const noexcept { return traj_.velocities(); }
+const std::vector<std::array<double,3>>& FixedTrajectory::accelerations() const noexcept { return traj_.accelerations(); }
+
+std::size_t FixedTrajectory::sample_count() const noexcept { return traj_.sample_count(); }
+double      FixedTrajectory::mean_dt()      const          { return traj_.mean_dt(); }
+
+
 
 LiveTrajectory::LiveTrajectory(double time,
                                double mass,

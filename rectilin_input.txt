@@ -1,0 +1,56 @@
+<SpatialDomain>
+nx               512
+ny               512
+nz               1024
+x_min           -3.0
+x_max            3.0
+y_min           -3.0
+y_max            3.0
+z_min           -9.0
+z_max            3.0
+seed_fraction    0.01
+num_levels       1
+ref_ratio        2
+
+
+<Solver>
+t                2.0
+cs               1.0
+rmin             0.1
+error_tol        1e-6
+unique_tol       1e-5
+max_roots        6
+
+
+<Trajectory>
+live             false
+time_i           0.0
+mass_i           1.0
+=================================
+if live is false prescribe below:
+=================================
+Xx               0.0
+Xy               0.0
+Xz              -2.0 * t
+Vx               0.0
+Vy               0.0
+Vz              -2.0
+Ax               0.0
+Ay               0.0
+Az               0.0
+Ntraj            40000
+=================================
+else, set live parameters below:
+=================================
+rho0             1.0
+timelimiter      0.1
+finite_dt        true
+RecordCadence    10
+=================================
+=================================
+
+
+<Outputs>
+checkpoint_dir  test
+checkpoint_every 1
+

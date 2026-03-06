@@ -335,7 +335,7 @@ static void ensure_base_groups(hid_t file) {
     ensure_groups(file, "/domain");
     ensure_groups(file, "/trajectory");
     ensure_groups(file, "/force");
-    ensure_groups(file, "/alpha/meta");
+    ensure_groups(file, "/alpha");
 }
 
 // ----------------------------
@@ -355,7 +355,7 @@ void save_checkpoint(
     int RecordTrajectoryCadence_used,
     const std::vector<double>& force_t,
     const std::vector<std::array<double,3>>& force_F,
-    const AlphaSnapshot* alpha_snapshot
+    const std::vector<AlphaSnapshot>& alpha_snapshots
 ) {
     const std::size_t n = t_series.size();
     if (n == 0) throw std::runtime_error("save_checkpoint: empty trajectory");
@@ -430,15 +430,22 @@ void save_checkpoint(
         write_flat_2d_double(f.id, "/force/F", {}, 0, 3);
     }
 
-    // /alpha
-    if (alpha_snapshot) {
-        if (alpha_snapshot->alpha_flat.size() != alpha_snapshot->Nx * alpha_snapshot->Ny * alpha_snapshot->Nz)
-            throw std::runtime_error("save_checkpoint: alpha size mismatch");
-
-        write_flat_3d_double(f.id, "/alpha/data",
-                             alpha_snapshot->alpha_flat,
-                             alpha_snapshot->Nx, alpha_snapshot->Ny, alpha_snapshot->Nz);
-        write_scalar_double(f.id, "/alpha/meta/t", alpha_snapshot->t_alpha);
+    // /alpha — one group per refinement level
+    write_scalar_int(f.id, "/alpha/num_levels", static_cast<int>(alpha_snapshots.size()));
+    for (const auto& snap : alpha_snapshots) {
+        if (snap.alpha_flat.size() != snap.Nx * snap.Ny * snap.Nz)
+            throw std::runtime_error("save_checkpoint: alpha size mismatch at level "
+                                     + std::to_string(snap.level));
+        const std::string base = "/alpha/level_" + std::to_string(snap.level);
+        write_flat_3d_double(f.id, base + "/data",
+                             snap.alpha_flat, snap.Nx, snap.Ny, snap.Nz);
+        write_scalar_double(f.id, base + "/meta/t",  snap.t_alpha);
+        write_scalar_u64   (f.id, base + "/meta/Nx", static_cast<std::uint64_t>(snap.Nx));
+        write_scalar_u64   (f.id, base + "/meta/Ny", static_cast<std::uint64_t>(snap.Ny));
+        write_scalar_u64   (f.id, base + "/meta/Nz", static_cast<std::uint64_t>(snap.Nz));
+        write_vec1d_double (f.id, base + "/meta/range_x", {snap.range_x[0], snap.range_x[1]});
+        write_vec1d_double (f.id, base + "/meta/range_y", {snap.range_y[0], snap.range_y[1]});
+        write_vec1d_double (f.id, base + "/meta/range_z", {snap.range_z[0], snap.range_z[1]});
     }
 
     if (H5Fflush(f.id, H5F_SCOPE_GLOBAL) < 0) throw_h5("H5Fflush failed");

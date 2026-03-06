@@ -73,9 +73,18 @@ public:
            double rho,
            double rminimum);
 
-    void compute_wake(double t);
+    // use_existing_seeds=true skips ComputeSeedRoots (call seed_from_coarse first)
+    void compute_wake(double t, bool use_existing_seeds = false);
 
-    const Mat3D& alpha() const noexcept { return Alpha; }
+    // Populate this (fine) grid's Roots/Errors by nearest-neighbour mapping from a
+    // coarser-level solver.  Call before compute_wake(t, true).
+    // Returns the number of root slots copied; 0 means the coarse level was empty.
+    int seed_from_coarse(const SpatialDomain&   coarse_domain,
+                         const LinearGasSolver& coarse_solver);
+
+    const Mat3D& alpha()  const noexcept { return Alpha; }
+    const Mat4D& roots()  const noexcept { return Roots; }
+    const Mat4D& errors() const noexcept { return Errors; }
 
     const std::array<double,3>& current_force() const noexcept { return CurrentForce; }
     const std::vector<std::array<double,3>>& force_series() const noexcept { return ForceSeries; }

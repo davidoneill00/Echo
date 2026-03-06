@@ -778,10 +778,73 @@ void LinearGasSolver::ComputeSeedRoots(double t){
 }
 
 
-void LinearGasSolver::compute_wake(double t){
-    
-    // 1. Compute the seeds at requested time
-    ComputeSeedRoots(t);
+int LinearGasSolver::seed_from_coarse(const SpatialDomain&   coarse_domain,
+                                       const LinearGasSolver& coarse_solver)
+{
+    int seeded = 0;
+    const double NaN = std::numeric_limits<double>::quiet_NaN();
+
+    // Reset all voxels
+    for (int i = 0; i < (int)Domain.Resolution_x; ++i)
+    for (int j = 0; j < (int)Domain.Resolution_y; ++j)
+    for (int k = 0; k < (int)Domain.Resolution_z; ++k) {
+        Alpha(i,j,k) = 0.0;
+        for (int r = 0; r < Max_Number_of_Roots; ++r) {
+            Roots(i,j,k,r)  = NaN;
+            Errors(i,j,k,r) = NaN;
+        }
+    }
+
+    // Pre-compute coarse grid parameters for fast nearest-neighbour lookup
+    const double cx0 = coarse_domain.X[0];
+    const double cy0 = coarse_domain.Y[0];
+    const double cz0 = coarse_domain.Z[0];
+    const double cdx = coarse_domain.dX[0];
+    const double cdy = coarse_domain.dX[1];
+    const double cdz = coarse_domain.dX[2];
+    const int cNx = (int)coarse_domain.Resolution_x;
+    const int cNy = (int)coarse_domain.Resolution_y;
+    const int cNz = (int)coarse_domain.Resolution_z;
+
+    const Mat4D& cRoots  = coarse_solver.roots();
+    const Mat4D& cErrors = coarse_solver.errors();
+
+    // For every fine voxel, copy roots from the nearest coarse voxel.
+    // With ref_ratio=2, each fine voxel maps to coarse_index ≈ fine_index/2 + offset.
+    // Seeding all voxels (not just seed-origins) maximises BFS coverage.
+    for (int i = 0; i < (int)Domain.Resolution_x; ++i) {
+        int ci = static_cast<int>(std::round((Domain.X[i] - cx0) / cdx));
+        ci = std::max(0, std::min(ci, cNx - 1));
+
+        for (int j = 0; j < (int)Domain.Resolution_y; ++j) {
+            int cj = static_cast<int>(std::round((Domain.Y[j] - cy0) / cdy));
+            cj = std::max(0, std::min(cj, cNy - 1));
+
+            for (int k = 0; k < (int)Domain.Resolution_z; ++k) {
+                int ck = static_cast<int>(std::round((Domain.Z[k] - cz0) / cdz));
+                ck = std::max(0, std::min(ck, cNz - 1));
+
+                for (int r = 0; r < Max_Number_of_Roots; ++r) {
+                    double tau = cRoots(ci, cj, ck, r);
+                    if (std::isfinite(tau)) {
+                        double err = cErrors(ci, cj, ck, r);
+                        Roots(i,j,k,r)  = tau;
+                        Errors(i,j,k,r) = std::isfinite(err) ? err : 0.0;
+                        ++seeded;
+                    }
+                }
+            }
+        }
+    }
+    return seeded;
+}
+
+
+void LinearGasSolver::compute_wake(double t, bool use_existing_seeds) {
+
+    // 1. Seed the grid (either freshly via root-finding, or from a coarser level)
+    if (!use_existing_seeds)
+        ComputeSeedRoots(t);
 
     // 2. Define the neighbour points for each voxel:
     Mat2I Neighbours(6, 3);

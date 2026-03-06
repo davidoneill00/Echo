@@ -1,18 +1,16 @@
 
-// 1: Requirement HDF5. Installation
-conda install -c conda-forge "hdf5>=1.14" h5py numpy
+// 1: Environment with packages
+source .echo311/bin/activate
 
-// 2: Setting up a run. 
-Write this later
-
-// 3: Running 
+// 2: Building
 rm -rf build
 mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j
-./echo
+
+// 3: Running 
+./echo ../inputs.txt
 
 // 4. Analysing Data
-source .echo311/bin/activate
 python plotting/plot.py

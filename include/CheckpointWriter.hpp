@@ -25,7 +25,7 @@ void save_checkpoint(
     const std::vector<double>& force_t,
     const std::vector<std::array<double,3>>& force_F,
 
-    const AlphaSnapshot* alpha_snapshot
+    const std::vector<AlphaSnapshot>& alpha_snapshots
 );
 
 } // namespace checkpoint

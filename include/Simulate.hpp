@@ -8,49 +8,28 @@
 #include "Domain.hpp"
 #include "GaseousDynamics.hpp"
 #include "Trajectory.hpp"
-
-
-struct SimConfig {
-  // initial state
-  double time_i, mass_i;
-  std::array<double,3> X_i, V_i, A_i;
-
-  // domain
-  std::size_t Nx, Ny, Nz;
-  std::array<double,2> range_x, range_y, range_z;
-  double seed_fraction;
-
-  // solver
-  double cs, rho0, rmin, error_tol, unique_tol;
-  int max_roots;
-
-  // runtime params
-  double timelimiter;
-  bool finite_timestep;
-  int RecordTrajectoryCadence;
-
-  // output
-  std::string checkpoint_dir;
-  int checkpoint_every;
-};
+#include "IncludeParams.hpp"
 
 
 class Simulate {
 public:
-    Simulate(const SimConfig& sim);
+    Simulate(const SimConfig& cfg);
 
+    // All of T, M, X, V, A are known upfront (pre-computed or analytical).
+    // A FixedTrajectory is built internally; no add_event thinning occurs.
     void run_fixed(
-        const std::vector<double>& ComputeTimes,
-        const std::vector<double>& TrajectoryTimeseries,
-        const std::vector<double>& TrajectoryMasses,
-        const std::vector<std::array<double, 3>>& TrajectoryPositions,
-        const std::vector<std::array<double, 3>>& TrajectoryVelocities,
-        const std::vector<std::array<double, 3>>& TrajectoryAccelerations
+        const std::vector<double>&               ComputeTimes,
+        const std::vector<double>&               T,
+        const std::vector<double>&               M,
+        const std::vector<std::array<double,3>>& X,
+        const std::vector<std::array<double,3>>& V,
+        const std::vector<std::array<double,3>>& A
     );
-private:
-  SimConfig cfg;
 
-  LiveTrajectory Trajectory;
-  SpatialDomain Domain;
-  LinearGasSolver Solver;
+    //void run_live(
+    //);
+
+private:
+    SimConfig     cfg;
+    RefinedDomain Refined;
 };
